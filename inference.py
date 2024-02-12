@@ -4,14 +4,14 @@ from torchvision import transforms, utils
 import torch.optim as optim
 from torchvision import datasets
 import math
-
+from glob import glob
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch.nn as nn
 import torch.nn.functional as F
 from sklearn import metrics
-
+from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 import os
 import sys
@@ -26,62 +26,47 @@ torch.cuda.empty_cache()
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 CLASSES = ('cherry', 'strawberry', 'tomato')
 
-train_dir = "traindata/"
-test_dir = "testdata/"
-infer_dir = "inferdata/"
-TEST_BATCH_SIZE = 32
-
-"""### Data Loader & Evaluate function"""
-
-class ImageFolderWithPaths(datasets.ImageFolder):
-
-    def __getitem__(self, index):
-
-        img, label = super(ImageFolderWithPaths, self).__getitem__(index)
-
-        path = self.imgs[index][0]
-        img_size = img.shape
-
-        return (img, label ,path)
 
 transform = transforms.Compose([
         transforms.Resize((IMG_RESIZE, IMG_RESIZE)),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
-def f_inference(model, val_loader):
+def f_inference(model, img_tensor):
+  with torch.no_grad():
+    X = img_tensor.to(DEVICE)
+    outputs = model(X)
+    _, preds = torch.max(outputs, 1)
+    preds = preds.to(DEVICE)
 
-  total_pred = {classname: 0 for classname in CLASSES}
-  l_preds = []
-  step = int((EVAL_SIZE/TEST_BATCH_SIZE)/10) + 1
-  for i, (data) in enumerate(val_loader, 0):
-    X, _ = data
-    with torch.no_grad():
-      X = X.to(DEVICE)
-      outputs = model(X)
-      _, preds = torch.max(outputs, 1)
-      preds = preds.to(DEVICE)
-      print(preds)
-      l_preds += preds.cpu().tolist()
-    if i % step == 0:
-      print(f'--- {len(l_preds)} images are evaluated.')
+    return(preds.item())
 
+dir_path = os.path.dirname(os.path.realpath(__file__))
+print(f"Working folder: {dir_path}")
 
 """### Load model"""
-load_model_file = 'model.pth'
-
+load_model_file = dir_path + '/model.pth'
+infer_dir = dir_path + "/inferdata"
 if len(sys.argv) > 1:
   if (os.path.exists(sys.argv[1])):
     load_model_file = sys.argv[1]
+  elif (os.path.exists(dir_path + '/' + sys.argv[1])):
+    load_model_file = dir_path + '/' + sys.argv[1]
 
 if not(os.path.exists(load_model_file)):
   print("The default model does not exists")
   exit()
 
 if len(sys.argv) > 2:
-  test_dir = sys.argv[2]
-  print(f"Test folder is set to {test_dir}")
+  if (os.path.exists(sys.argv[2])):
+    infer_dir = sys.argv[2]
+  elif (os.path.exists(dir_path + '/' + sys.argv[2])):
+    infer_dir = dir_path + '/' + sys.argv[2]
+  print(f"Test folder: {infer_dir}")
 
+if not(os.path.exists(infer_dir)):
+  print("The inference folder does not exists")
+  exit()
 
 enet =  torchvision.models.resnet18(weights='IMAGENET1K_V1')
 num_ftrs = enet.fc.in_features
@@ -94,16 +79,34 @@ enet.eval()
 
 """### Evaluation Result"""
 
-eval_set = ImageFolderWithPaths(test_dir, transform=transform) # add transformation directly
-EVAL_SIZE = len(eval_set)
+# %matplotlib inline
+# import matplotlib.pyplot as plt
 
+annotations = []
+images = glob(infer_dir + '/*.jpg')
+EVAL_SIZE = len(images)
 print(f"\nInference {EVAL_SIZE} images")
 
-val_loader = DataLoader(eval_set, batch_size=TEST_BATCH_SIZE, shuffle=False) #EVAL_SIZE
+max_row_plot = 10
+plots_per_row = 5
+row_plot = int(np.ceil(EVAL_SIZE/plots_per_row))
+if row_plot > max_row_plot: print('Subset of results are plotted')
 
-start = time.time()
-f_inference(enet, val_loader)
+nr_plot = min(row_plot, max_row_plot)
+fig = plt.figure(figsize=(20, 4*nr_plot))
+for i, image_fn in enumerate(images):
+  img = Image.open(image_fn)
+  img_tensor = transform(img).unsqueeze(0)
 
-elapse = (time.time() - start)/60
+  preds=f_inference(enet, img_tensor)
+  print(image_fn, "|" , CLASSES[preds])
 
-print(f"\nElapse: {elapse:.1f} minutes")
+  
+  ax = fig.add_subplot(nr_plot, plots_per_row, i+1)
+  ax.imshow(img)
+  ax.axis('off')
+  ax.set_title('Predict: ' + CLASSES[preds])
+  if (i+1) / plots_per_row == nr_plot: break
+plt.savefig('inference_result.png')
+print('Inference result is save at ', dir_path, '/inference_result.png')
+
