@@ -10,11 +10,17 @@ This project demonstrates the transfer learning by fine-tuning a pre-trained mod
 ### Inference
 
 ```{python}
-!python inference.py -image 'file.png'
+!python inference.py
 ```
 Inference image for illustration:
+
 1.jpg  (Copyright: Freeimages.com / shibuya86)
+
 2.jpg  (Copyright: Freeimages.com / mm904ut)
+
 3.jpg  (Copyright: Freeimages.com / hgec)
+
 4.jpg  (Copyright: Freeimages.com / alainap)
+
 5.jpg  (Copyright: Freeimages.com / DartVader)
+
